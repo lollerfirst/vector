@@ -1,4 +1,4 @@
-## vector implementation - only unix
+## vector implementation - unix only
 
 ### features:
 * Thread-safe functions;
