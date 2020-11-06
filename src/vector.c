@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <memory.h>
-#include "/home/lollerfirst/development/async/semaphore.h"
+#include "semaphore.h"
 
 #define __VECTOR_MAX_SIZE 1073741824  // 1 GB max size
 #define __VECTOR_POPHEAD_DELAY 48
@@ -54,11 +54,12 @@ int vector_init(Vector* __vec, const uint64_t __size, const uint64_t __type_size
     uint8_t* tmp_ptr;
     if((tmp_ptr = mmap(NULL, ((__size*__type_size) / __PAGE_SIZE) + __PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)) == (uint8_t*)-1 || (uint128_t)__size * __type_size >= __VECTOR_MAX_SIZE) return -1;
 
-    __vec->__vector_ptr = tmp_ptr;
-    __vec->__vector_pages = (__size*__type_size / __PAGE_SIZE) + 1;
-    __vec->__vector_swap_indices[0] = 1;
-    __vec->__vector_size = (__size*__type_size / __PAGE_SIZE) + __PAGE_SIZE;
+    uint64_t tsize =  __size*__type_size / __PAGE_SIZE;
+    
+    __vec->__vector_ptr = tmp_ptr;__vec->__vector_pages = tsize + 1;
+    __vec->__vector_swap_indices[0] = 1;__vec->__vector_size = tsize + __PAGE_SIZE;
     __vec->__vector_element_size = __type_size;
+
 
     posix_madvise((void*) tmp_ptr, (__size / __PAGE_SIZE) + __PAGE_SIZE, POSIX_MADV_SEQUENTIAL);
     return 0;
