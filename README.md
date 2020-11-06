@@ -13,7 +13,7 @@
 
 ### planning:
 * extensive testing to find out corner cases, bugs etc... ;
-* adding a system that detects small-sized vectors and proceeds to allocate heap memory with sbrk or malloc instead of allocating a huge 4096Kb chunk of memory;
+* adding a system that detects small-sized vectors and proceeds to allocate heap memory with sbrk or malloc instead of allocating a huge 4KB chunk of memory;
 * speed tests;
 
 ### functions table:
