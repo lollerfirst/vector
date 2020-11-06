@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <memory.h>
-#include "/home/lollerfirst/development/async/semaphore.h"
+#include "semaphore.h"
 
 #define __VECTOR_MAX_SIZE 1073741824  // 1 GB max size
 #define __VECTOR_POPHEAD_DELAY 48
