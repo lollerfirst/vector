@@ -27,10 +27,12 @@ int main(void){
 
     printf("[pushf-popf]\nf: %d\ng: %d\n", f, g);
 
-    char* string = malloc(256);
-    sprintf(string, "%s", "asjakjfaskjfaskjfahsjfhashdauhfahsdajfkajsldkjaslkfalkfjalskdjaskdjaksjaoighjalsfakjdhflksjdkajglbgjblksdgldfjalksjdigoiakbgoiafbaphoiyoh38429385y2kjbslkv,mnvlaidhbasjfhaogoiruoiguoaiskjaishfoaihabgidjjudhfhuoigjosidjfjkguhdoifjaoisdksjhgoijgjdhfauaksjhff");
+    static char string[2048];
+    memset(string, 'C', sizeof(string)-1);  //stored in the data segment.
+    string[2047] = '\0';
+    
     Vector vector2;
-    vector_init(&vector2, 4u, 256U);
+    vector_init(&vector2, 4u, sizeof(string));
     vector_pushb(&vector2, string);
     vector_pushb(&vector2, string);
     vector_pushb(&vector2, string);

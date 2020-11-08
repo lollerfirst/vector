@@ -8,16 +8,16 @@
 
 #define __VECTOR_MAX_SIZE 1073741824  // 1 GB max size
 #define __VECTOR_POPHEAD_DELAY 48
-#define __SWAP_GAMMA 0.30F
+#define __SWAP_GAMMA 0.75F
 
 #define unlikely(x) __builtin_expect(x, 0)
 #define likely(x) __builtin_expect(x, 1)
 
 #define vector_memcheck(__vec) {\
-    if(unlikely(__vec->__vector_swap_indices[0] != __vec->__vector_swap_indices[0] && __vec->__vector_swap_indices[0] > 0)){\
-    uintptr_t swap_addr1 = (uintptr_t) __vec->__vector_ptr + ((__vec->__vector_swap_indices[0]-1) * __PAGE_SIZE);\
-    uintptr_t swap_addr2 = (uintptr_t) __vec->__vector_ptr + ((__vec->__vector_swap_indices[1]-1) * __PAGE_SIZE);\
-    posix_madvise((void*)swap_addr1, __PAGE_SIZE, MADV_WILLNEED);\
+    if(unlikely(__vec->__vector_swap_indices[0] != __vec->__vector_swap_indices[1] && __vec->__vector_swap_indices[1] > 0)){\
+    uintptr_t swap_addr1 = (uintptr_t) __vec->__vector_ptr + (((uint32_t)__vec->__vector_swap_indices[0]-1) * __PAGE_SIZE);\
+    uintptr_t swap_addr2 = (uintptr_t) __vec->__vector_ptr + (((uint32_t)__vec->__vector_swap_indices[1]-1) * __PAGE_SIZE);\
+    posix_madvise((void*)swap_addr1, __PAGE_SIZE, MADV_SEQUENTIAL);\
     posix_madvise((void*)swap_addr2, __PAGE_SIZE, MADV_DONTNEED);\
     }\
 }
@@ -29,7 +29,7 @@ typedef unsigned __int128 uint128_t;
 
 typedef struct __vector_type{ uint8_t* __vector_ptr; 
                          uint32_t __vector_pages;
-                         int32_t __vector_swap_indices[2];
+                         float __vector_swap_indices[2];
                          uint64_t __vector_size; 
                          uint64_t __vector_element_size; 
                          uint64_t __vector_index; 
@@ -52,12 +52,12 @@ int vector_init(Vector* __vec, const uint64_t __size, const uint64_t __type_size
     __PAGE_SIZE = (uint32_t) sysconf(_SC_PAGESIZE);
     
     uint8_t* tmp_ptr;
-    if((tmp_ptr = mmap(NULL, ((__size*__type_size) / __PAGE_SIZE) + __PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)) == (uint8_t*)-1 || (uint128_t)__size * __type_size >= __VECTOR_MAX_SIZE) return -1;
+    if((tmp_ptr = mmap(NULL, (((__size*__type_size) / __PAGE_SIZE) + 1)* __PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)) == (uint8_t*)-1 || (uint128_t)__size * __type_size >= __VECTOR_MAX_SIZE) return -1;
 
-    uint64_t tsize =  __size*__type_size / __PAGE_SIZE;
+    uint16_t tsize =  (__size*__type_size / __PAGE_SIZE) + 1;
     
-    __vec->__vector_ptr = tmp_ptr;__vec->__vector_pages = tsize + 1;
-    __vec->__vector_swap_indices[0] = 1;__vec->__vector_size = tsize + __PAGE_SIZE;
+    __vec->__vector_ptr = tmp_ptr;__vec->__vector_pages = tsize;
+    __vec->__vector_swap_indices[0] = 1;__vec->__vector_size = tsize * __PAGE_SIZE;
     __vec->__vector_element_size = __type_size;
 
 
@@ -68,13 +68,13 @@ int vector_init(Vector* __vec, const uint64_t __size, const uint64_t __type_size
 
 static inline int vector_expand(Vector* __vec){
     uint8_t* tmp_ptr;
-    if((tmp_ptr = mremap((void*)__vec->__vector_ptr, __vec->__vector_size, __vec->__vector_size + __PAGE_SIZE, MREMAP_MAYMOVE)) == (void*)-1) return -1;
-    
-    __vec->__vector_size += __PAGE_SIZE;
-    ++__vec->__vector_pages;
-    __vec->__vector_ptr = tmp_ptr;
 
-    posix_madvise((void*) tmp_ptr, __vec->__vector_size, POSIX_MADV_SEQUENTIAL);
+    uint16_t add_type_pages = (__vec->__vector_element_size / __PAGE_SIZE) + 1; //this is not useless
+    if((tmp_ptr = mremap((void*)__vec->__vector_ptr, __vec->__vector_size, __vec->__vector_size + (__PAGE_SIZE*add_type_pages), MREMAP_MAYMOVE)) == (void*)-1) return -1;
+    
+    __vec->__vector_size += __PAGE_SIZE*add_type_pages;
+    __vec->__vector_pages += add_type_pages;
+    __vec->__vector_ptr = tmp_ptr;
     return 0;
 }
 
@@ -88,7 +88,6 @@ static inline int vector_shrink(Vector* __vec){
     --__vec->__vector_pages;
     __vec->__vector_ptr = tmp_ptr;
 
-    posix_madvise((void*) tmp_ptr, __vec->__vector_size, POSIX_MADV_SEQUENTIAL);
     return 0;
 }
 
@@ -101,9 +100,9 @@ void vector_readn(Vector* restrict __vec, void* restrict  __dest, const uint64_t
 
     /* calculating exponential moving average of blocks accessed */
     uint32_t accessed_block = (((uint8_t*)tmp_ptr - __vec->__vector_ptr) / __PAGE_SIZE) + 1;
-    uint32_t zero_swap_index = __vec->__vector_swap_indices[0];
+    float zero_swap_index = __vec->__vector_swap_indices[0];
     __vec->__vector_swap_indices[1] = zero_swap_index; 
-    __vec->__vector_swap_indices[0] = (uint32_t)(accessed_block * __SWAP_GAMMA + (zero_swap_index * ((float)1-__SWAP_GAMMA)));
+    __vec->__vector_swap_indices[0] = accessed_block * __SWAP_GAMMA + (zero_swap_index * (1.0F -__SWAP_GAMMA));
     
     vector_memcheck(__vec);
     mutex_signal((__mutex_semaphore*) sem);
@@ -119,9 +118,9 @@ void vector_storen(Vector* restrict __vec, const uint8_t* restrict __src, const 
 
     /* calculating exponential moving average of blocks accessed */
     uint32_t accessed_block = (((uint8_t*)tmp_ptr - __vec->__vector_ptr) / __PAGE_SIZE) + 1;
-    uint32_t zero_swap_index = __vec->__vector_swap_indices[0];
+    float zero_swap_index = __vec->__vector_swap_indices[0];
     __vec->__vector_swap_indices[1] = zero_swap_index; 
-    __vec->__vector_swap_indices[0] = (uint32_t)(accessed_block * __SWAP_GAMMA + (zero_swap_index * ((1.0F-__SWAP_GAMMA))));
+    __vec->__vector_swap_indices[0] = accessed_block * __SWAP_GAMMA + (zero_swap_index * (1.0F - __SWAP_GAMMA));
     
     vector_memcheck(__vec);
     mutex_signal((__mutex_semaphore*) sem);
@@ -144,9 +143,9 @@ int vector_pushn(Vector* restrict __vec, const void* restrict __src, const uint6
 
     /* calculating exponential moving average of blocks accessed */
     uint32_t accessed_block = (((uint8_t*)tmp_ptr - __vec->__vector_ptr) / __PAGE_SIZE) + 1;
-    uint32_t zero_swap_index = __vec->__vector_swap_indices[0];
+    float zero_swap_index = __vec->__vector_swap_indices[0];
     __vec->__vector_swap_indices[1] = zero_swap_index; 
-    __vec->__vector_swap_indices[0] = (uint32_t)(accessed_block * __SWAP_GAMMA + (zero_swap_index * ((float)1-__SWAP_GAMMA)));
+    __vec->__vector_swap_indices[0] = accessed_block * __SWAP_GAMMA + (zero_swap_index * (1.0F - __SWAP_GAMMA));
     
     vector_memcheck(__vec);
 
@@ -183,9 +182,9 @@ int vector_pushf(Vector* restrict __vec, const void* restrict __src){
 
     /* calculating exponential moving average of blocks accessed */
     uint32_t accessed_block = (((uint8_t*)tmp_ptr - __vec->__vector_ptr) / __PAGE_SIZE) + 1;
-    uint32_t zero_swap_index = __vec->__vector_swap_indices[0];
+    float zero_swap_index = __vec->__vector_swap_indices[0];
     __vec->__vector_swap_indices[1] = zero_swap_index; 
-    __vec->__vector_swap_indices[0] = (uint32_t)(accessed_block * __SWAP_GAMMA + (zero_swap_index * ((float)1-__SWAP_GAMMA)));
+    __vec->__vector_swap_indices[0] = accessed_block * __SWAP_GAMMA + (zero_swap_index * (1.0F - __SWAP_GAMMA));
     
     vector_memcheck(__vec);
 
@@ -211,9 +210,9 @@ int vector_popn(Vector* restrict __vec, void* restrict __dest, const uint64_t __
     
     /* calculating exponential moving average of blocks accessed */
     uint32_t accessed_block = (((uint8_t*)tmp_ptr - __vec->__vector_ptr) / __PAGE_SIZE) + 1;
-    uint32_t zero_swap_index = __vec->__vector_swap_indices[0];
+    float zero_swap_index = __vec->__vector_swap_indices[0];
     __vec->__vector_swap_indices[1] = zero_swap_index; 
-    __vec->__vector_swap_indices[0] = (uint32_t)(accessed_block * __SWAP_GAMMA + (zero_swap_index * ((float)1-__SWAP_GAMMA)));
+    __vec->__vector_swap_indices[0] = accessed_block * __SWAP_GAMMA + (zero_swap_index * (1.0F - __SWAP_GAMMA));
     
     vector_memcheck(__vec);
     
@@ -253,9 +252,9 @@ int vector_popf(Vector* restrict __vec, void* restrict __dest){
 
     /* calculating exponential moving average of blocks accessed */
     uint32_t accessed_block = (((uint8_t*)tmp_ptr - __vec->__vector_ptr) / __PAGE_SIZE) + 1;
-    uint32_t zero_swap_index = __vec->__vector_swap_indices[0];
+    float zero_swap_index = __vec->__vector_swap_indices[0];
     __vec->__vector_swap_indices[1] = zero_swap_index; 
-    __vec->__vector_swap_indices[0] = (uint32_t)(accessed_block * __SWAP_GAMMA + (zero_swap_index * ((float)1-__SWAP_GAMMA)));
+    __vec->__vector_swap_indices[0] = accessed_block * __SWAP_GAMMA + (zero_swap_index * (1.0F - __SWAP_GAMMA));
     
     vector_memcheck(__vec);
 
