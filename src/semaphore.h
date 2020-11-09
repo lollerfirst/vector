@@ -4,17 +4,18 @@
 #include <unistd.h>
 #include <stdint.h>
 
-typedef volatile uint8_t __mutex_semaphore;
+typedef volatile _Atomic uint8_t __mutex_semaphore;
 
-static inline void mutex_init(__mutex_semaphore* __mutex){
+/* initialize the mutex semaphore */
+#define mutex_init(__mutex)\
     __atomic_store_n(__mutex, 0, __ATOMIC_RELAXED);
+
+/* wait for the mutex to be 0 */
+#define mutex_wait(__mutex) {\
+    uint8_t __expected = 0;\
+    while(!__atomic_compare_exchange_n(__mutex, &__expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));\
 }
 
-static inline void mutex_wait(__mutex_semaphore* __mutex) {
-    uint8_t __expected = 0;
-    while(!__atomic_compare_exchange_n(__mutex, &__expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
-}
-
-static inline void mutex_signal(__mutex_semaphore* __mutex) {
+/* signal the mutex is now free */
+#define mutex_signal(__mutex)\
     __atomic_store_n(__mutex, 0, __ATOMIC_RELEASE);
-}

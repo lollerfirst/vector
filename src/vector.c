@@ -37,31 +37,46 @@ typedef struct __vector_type{ uint8_t* __vector_ptr;
                          uint16_t __vector_head_popped;
                          } Vector;
 
-void vector_readn(Vector* restrict __vec, void* restrict  __dest, const uint64_t __index, const uint64_t __element_count);
-void vector_storen(Vector* restrict __vec, const uint8_t* restrict __src, const uint64_t __index, const uint64_t __element_count);
-int vector_init(Vector* __vec, const uint64_t __size, const uint64_t __type_size);
-int vector_pushn(Vector* restrict, const void* restrict , const uint64_t __element_count);
+
+/* Read __element_count elements starting from __index (ATTENTION: this can still segfault)*/
+void vector_readn(Vector* restrict __vec, void* restrict __dest, const uint64_t __index, const size_t __element_count);
+/* Store __element_count elements starting from __index (ATTENTION: this can still segfault)*/
+void vector_storen(Vector*  restrict __vec, void*  restrict __src, const uint64_t __index, const size_t __element_count);
+/* Initialize the vector with specified __size and of the type __type_size */
+int vector_init(Vector* __vec, const size_t __size, const size_t __type_size);
+/* Push __element_count elements to the back of the vector from __src */
+int vector_pushn(Vector* restrict __vec, const void*  restrict __src, const size_t __element_count);
+/* Push an element to the front of the vector from __src */
 int vector_pushf(Vector* restrict __vec, const void* restrict __src);
+/* Pop __element_count elements from the back of the vector into __dest */
+int vector_popn(Vector* restrict __vec, void* restrict __dest, const size_t __element_count);
+/* Pop an element from the front of the vector into __dest */
 int vector_popf(Vector* restrict __vec, void* restrict __dest);
+/* Returns the address of an element at the specified zero addressed index */
 void* vector_at(Vector* restrict __vec, const uint64_t __index);
+
 static inline int vector_expand(Vector*);
 static inline int vector_shrink(Vector*);
  
-int vector_init(Vector* __vec, const uint64_t __size, const uint64_t __type_size){
-    memset(__vec, 0x0, sizeof(Vector));
+int vector_init(Vector* __vec, const size_t __size, const size_t __type_size){
     __PAGE_SIZE = (uint32_t) sysconf(_SC_PAGESIZE);
-    
     uint8_t* tmp_ptr;
     if((tmp_ptr = mmap(NULL, (((__size*__type_size) / __PAGE_SIZE) + 1)* __PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)) == (uint8_t*)-1 || (uint128_t)__size * __type_size >= __VECTOR_MAX_SIZE) return -1;
 
     uint16_t tsize =  (__size*__type_size / __PAGE_SIZE) + 1;
     
-    __vec->__vector_ptr = tmp_ptr;__vec->__vector_pages = tsize;
-    __vec->__vector_swap_indices[0] = 1;__vec->__vector_size = tsize * __PAGE_SIZE;
+    
+    mutex_init(&__vec->__vector_sem);
+
+    memset(__vec, 0, sizeof(Vector));
+    __vec->__vector_ptr = tmp_ptr;
+    __vec->__vector_pages = tsize;
+    __vec->__vector_swap_indices[0] = 1;
+    __vec->__vector_size = tsize * __PAGE_SIZE;
     __vec->__vector_element_size = __type_size;
 
 
-    posix_madvise((void*) tmp_ptr, (__size / __PAGE_SIZE) + __PAGE_SIZE, POSIX_MADV_SEQUENTIAL);
+    posix_madvise((void*) tmp_ptr, tsize * __PAGE_SIZE, POSIX_MADV_SEQUENTIAL);
     return 0;
 }
 
@@ -91,7 +106,7 @@ static inline int vector_shrink(Vector* __vec){
     return 0;
 }
 
-void vector_readn(Vector* restrict __vec, void* restrict  __dest, const uint64_t __index, const uint64_t __element_count){
+void vector_readn(Vector* restrict __vec, void* restrict __dest, const uint64_t __index, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
     uint64_t element_size = __vec->__vector_element_size;
@@ -109,7 +124,7 @@ void vector_readn(Vector* restrict __vec, void* restrict  __dest, const uint64_t
 }  
 
 
-void vector_storen(Vector* restrict __vec, const uint8_t* restrict __src, const uint64_t __index, const uint64_t __element_count) {
+void vector_storen(Vector*  restrict __vec, void*  restrict __src, const uint64_t __index, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
     uint64_t element_size = __vec->__vector_element_size;
@@ -127,7 +142,7 @@ void vector_storen(Vector* restrict __vec, const uint8_t* restrict __src, const 
 }
 
 
-int vector_pushn(Vector* restrict __vec, const void* restrict __src, const uint64_t __element_count){
+int vector_pushn(Vector* restrict __vec, const void*  restrict __src, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
     uint64_t element_size = __vec->__vector_element_size;
@@ -193,7 +208,7 @@ int vector_pushf(Vector* restrict __vec, const void* restrict __src){
 } 
 
 
-int vector_popn(Vector* restrict __vec, void* restrict __dest, const uint64_t __element_count){
+int vector_popn(Vector* restrict __vec, void* restrict __dest, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     
     mutex_wait((__mutex_semaphore*) sem);

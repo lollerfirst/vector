@@ -19,8 +19,8 @@
 
 /* Vector type definition */
 typedef struct __vector{ uint8_t* __vector_ptr; 
-                         uint32_t __vector_pages_index;
-                         uint16_t __vector_swap_indices[2];
+                         uint32_t __vector_pages;
+                         float __vector_swap_indices[2];
                          uint64_t __vector_size; 
                          uint64_t __vector_element_size; 
                          uint64_t __vector_index; 
@@ -29,7 +29,7 @@ typedef struct __vector{ uint8_t* __vector_ptr;
                          } Vector;
 
 /* Read __element_count elements starting from __index (ATTENTION: this can still segfault)*/
-extern void vector_readn(const Vector*__restrict __vec, void*__restrict __dest, const uint64_t __index, const size_t __element_count);
+extern void vector_readn(Vector*__restrict __vec, void*__restrict __dest, const uint64_t __index, const size_t __element_count);
 /* Store __element_count elements starting from __index (ATTENTION: this can still segfault)*/
 extern void vector_storen(Vector* __restrict __vec, void* __restrict __src, const uint64_t __index, const size_t __element_count);
 /* Initialize the vector with specified __size and of the type __type_size */
