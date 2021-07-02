@@ -1,8 +1,13 @@
-#pragma once
+#ifndef VECTOR_H
+#define VECTOR_H
 
 #include "semaphore.h"
 #include <stdint.h>
 #include <sys/types.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include "narg.h"
+#include <stdarg.h>
 
 /* Vector max size */
 #define __VECTOR_MAX_SIZE 1073741824
@@ -15,10 +20,23 @@
 #define vector_read(__vec, __dest, __index) vector_readn(__vec, __dest, __index, 1)
 /* Store and element at the specified vector __index. (vector_storen for a more efficient call)*/
 #define vector_store(__vec, __src, __index) vector_storen(__vec, __src, __index, 1)
+/* Initialize the vector with a pre-existing array __arr*/
+#define vector_init_arr(__vec, __arr, __element_count, __type_size) ({   \
+    int8_t __i = vector_init(__vec, __element_count, __type_size);       \
+    __i = vector_pushn(__vec, __arr, __element_count);                   \
+    (__i);                                                  \
+})
 
+/* Initialize a vector with an list of arguments passed in by pointer and terminated by a NULL pointer */
+#define vector_init_list(__vec, __size, __type_size, ...) ({                                     \
+    int8_t __i = vector_init(__vec, __size, __type_size);                                        \
+    __i = __init_list(__vec, PP_NARG(__VA_ARGS__), __VA_ARGS__);                                 \
+    (__i);                                                                                       \
+})
 
 /* Vector type definition */
-typedef struct __vector{ uint8_t* __vector_ptr; 
+typedef struct __vector{ uint8_t __vector_init;
+                         uint8_t* __vector_ptr; 
                          uint32_t __vector_pages;
                          float __vector_swap_indices[2];
                          uint64_t __vector_size; 
@@ -43,4 +61,22 @@ extern int vector_popn(Vector*__restrict __vec, void*__restrict __dest, const si
 /* Pop an element from the front of the vector into __dest */
 extern int vector_popf(Vector*__restrict __vec, void*__restrict __dest);
 /* Returns the address of an element at the specified zero addressed index */
-extern void* vector_at(Vector*__restrict __vec, const uint64_t __index);
+extern void* vector_at(Vector* __vec, const uint64_t __index);
+/* Releases all the memory under the specified vector and deinitializes it */
+extern void vector_free(Vector* __vec);
+
+
+
+/* init_list */
+int __init_list(Vector* __vec, const uint32_t __narg, ...){
+    va_list list;
+    uint32_t idx;
+
+    va_start(list, __narg);
+    for ( idx = 0; idx < __narg; ++idx )
+        if (vector_pushb(__vec, (void*) va_arg(list, uintptr_t)) != 0) return -1;
+    va_end(list);
+    return 0;
+} 
+
+#endif

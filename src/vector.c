@@ -4,14 +4,18 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <memory.h>
+#include <stdbool.h>
 #include "semaphore.h"
 
 #define __VECTOR_MAX_SIZE 1073741824  // 1 GB max size
 #define __VECTOR_POPHEAD_DELAY 48
 #define __SWAP_GAMMA 0.75F
+#define __INIT_VALUE 46
 
 #define unlikely(x) __builtin_expect(x, 0)
 #define likely(x) __builtin_expect(x, 1)
+
+#define check_init(__vec) (__vec->__vector_init)
 
 #define vector_memcheck(__vec) {\
     if(unlikely(__vec->__vector_swap_indices[0] != __vec->__vector_swap_indices[1] && __vec->__vector_swap_indices[1] > 0)){\
@@ -27,14 +31,15 @@ static uint32_t __PAGE_SIZE;
 
 typedef unsigned __int128 uint128_t;
 
-typedef struct __vector_type{ uint8_t* __vector_ptr; 
+typedef struct __vector_type{ uint8_t __vector_init;
+                         uint8_t* __vector_ptr; 
                          uint32_t __vector_pages;
                          float __vector_swap_indices[2];
                          uint64_t __vector_size; 
                          uint64_t __vector_element_size; 
-                         uint64_t __vector_index; 
-                         __mutex_semaphore __vector_sem; 
+                         uint64_t __vector_index;
                          uint16_t __vector_head_popped;
+                         __mutex_semaphore __vector_sem; 
                          } Vector;
 
 
@@ -53,19 +58,22 @@ int vector_popn(Vector* restrict __vec, void* restrict __dest, const size_t __el
 /* Pop an element from the front of the vector into __dest */
 int vector_popf(Vector* restrict __vec, void* restrict __dest);
 /* Returns the address of an element at the specified zero addressed index */
-void* vector_at(Vector* restrict __vec, const uint64_t __index);
+void* vector_at(Vector* __vec, const uint64_t __index);
+/* Frees the memory and deinitializes the vector*/
+void vector_free(Vector* __vec);
 
 static inline int vector_expand(Vector*);
 static inline int vector_shrink(Vector*);
  
 int vector_init(Vector* __vec, const size_t __size, const size_t __type_size){
     __PAGE_SIZE = (uint32_t) sysconf(_SC_PAGESIZE);
+    
+    if (check_init(__vec) == __INIT_VALUE) return -1;
+
     uint8_t* tmp_ptr;
     if((tmp_ptr = mmap(NULL, (((__size*__type_size) / __PAGE_SIZE) + 1)* __PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)) == (uint8_t*)-1 || (uint128_t)__size * __type_size >= __VECTOR_MAX_SIZE) return -1;
 
     uint16_t tsize =  (__size*__type_size / __PAGE_SIZE) + 1;
-    
-    
     mutex_init(&__vec->__vector_sem);
 
     memset(__vec, 0, sizeof(Vector));
@@ -74,7 +82,7 @@ int vector_init(Vector* __vec, const size_t __size, const size_t __type_size){
     __vec->__vector_swap_indices[0] = 1;
     __vec->__vector_size = tsize * __PAGE_SIZE;
     __vec->__vector_element_size = __type_size;
-
+    __vec->__vector_init = __INIT_VALUE;
 
     posix_madvise((void*) tmp_ptr, tsize * __PAGE_SIZE, POSIX_MADV_SEQUENTIAL);
     return 0;
@@ -84,7 +92,7 @@ int vector_init(Vector* __vec, const size_t __size, const size_t __type_size){
 static inline int vector_expand(Vector* __vec){
     uint8_t* tmp_ptr;
 
-    uint16_t add_type_pages = (__vec->__vector_element_size / __PAGE_SIZE) + 1; //this is not useless
+    uint16_t add_type_pages = (__vec->__vector_element_size / __PAGE_SIZE) + 1;
     if((tmp_ptr = mremap((void*)__vec->__vector_ptr, __vec->__vector_size, __vec->__vector_size + (__PAGE_SIZE*add_type_pages), MREMAP_MAYMOVE)) == (void*)-1) return -1;
     
     __vec->__vector_size += __PAGE_SIZE*add_type_pages;
@@ -109,6 +117,14 @@ static inline int vector_shrink(Vector* __vec){
 void vector_readn(Vector* restrict __vec, void* restrict __dest, const uint64_t __index, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
+
+    if (unlikely(!(check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        __dest = NULL;
+        return;
+    }
+
+
     uint64_t element_size = __vec->__vector_element_size;
     uintptr_t tmp_ptr = (uintptr_t) __vec->__vector_ptr + (__index*element_size);
     memcpy(__dest, (void*)tmp_ptr, element_size*__element_count);
@@ -127,6 +143,12 @@ void vector_readn(Vector* restrict __vec, void* restrict __dest, const uint64_t 
 void vector_storen(Vector*  restrict __vec, void*  restrict __src, const uint64_t __index, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
+    
+    if (unlikely(!(check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return;
+    }
+
     uint64_t element_size = __vec->__vector_element_size;
     uintptr_t tmp_ptr = (uintptr_t) __vec->__vector_ptr + (__index*element_size);
     memcpy((void*)tmp_ptr, __src, element_size*__element_count);
@@ -145,6 +167,12 @@ void vector_storen(Vector*  restrict __vec, void*  restrict __src, const uint64_
 int vector_pushn(Vector* restrict __vec, const void*  restrict __src, const size_t __element_count){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
+
+    if (unlikely((!check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return -1;
+    }
+
     uint64_t element_size = __vec->__vector_element_size;
     uint64_t index = __vec->__vector_index;
     if(unlikely((index+__element_count) * element_size >= __vec->__vector_size)){
@@ -171,6 +199,11 @@ int vector_pushn(Vector* restrict __vec, const void*  restrict __src, const size
 int vector_pushf(Vector* restrict __vec, const void* restrict __src){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
+
+    if (unlikely((!check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return -1;
+    }
 
     uint64_t index = __vec->__vector_index;
     uint64_t element_size = __vec->__vector_element_size;
@@ -212,6 +245,12 @@ int vector_popn(Vector* restrict __vec, void* restrict __dest, const size_t __el
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     
     mutex_wait((__mutex_semaphore*) sem);
+
+    if (unlikely(!(check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return -1;
+    }
+
     uint64_t index = __vec->__vector_index;
     if(unlikely(index - __element_count < 0)){
         mutex_signal((__mutex_semaphore*) sem);
@@ -236,8 +275,15 @@ int vector_popn(Vector* restrict __vec, void* restrict __dest, const size_t __el
 }
 
 int vector_popf(Vector* restrict __vec, void* restrict __dest){
+
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
+
+    if ((unlikely(!(check_init(__vec) == __INIT_VALUE)))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return -1;
+    }
+
     uint64_t element_size = __vec->__vector_element_size;
     uint64_t index = __vec->__vector_index;
     if(unlikely(index == 0)){
@@ -282,13 +328,33 @@ int vector_popf(Vector* restrict __vec, void* restrict __dest){
 void* vector_at(Vector* restrict __vec, const uint64_t __index){
     uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
     mutex_wait((__mutex_semaphore*) sem);
+
+    if (unlikely(!(check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return NULL;
+    }
+
     if(unlikely(__index >= __vec->__vector_index)){
         mutex_signal((__mutex_semaphore*) sem);
-        return (void*)-1;
+        return NULL;
     }
 
     uintptr_t addr = (uintptr_t)__vec->__vector_ptr + (__index*__vec->__vector_element_size);
     mutex_signal((__mutex_semaphore*) sem);
 
     return (void*)addr;
+}
+
+
+void vector_free(Vector* __vec){
+    uintptr_t sem = (uintptr_t) &__vec->__vector_sem;
+    mutex_wait((__mutex_semaphore*) sem);
+
+    if (unlikely(!(check_init(__vec) == __INIT_VALUE))){
+        mutex_signal((__mutex_semaphore*) sem);
+        return;
+    }
+    
+    munmap(__vec->__vector_ptr, __vec->__vector_pages*__PAGE_SIZE);
+    memset(__vec, 0, sizeof(Vector));
 }
