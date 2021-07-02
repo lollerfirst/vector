@@ -32,5 +32,7 @@
 |vector_popn(vec, dest, element_count)|no|Pop element_count elements from the back of the vector into dest|0 success, -1 failure|
 |vector_popf(vec, dest)|no|Pop an element from the front of the vector into dest|0 success, -1 failure|
 |vector_at(vec, index)|no|Returns the address of an element at the specified zero addressed index|address pointer on success, 0xFFFFFFFFFFFFFFFF on failure|
+|vector_init_arr(vec, src, element_count, type_size)|hybrid|Initializes the vector and populates it with the specified array|0 success, -1 failure|
+|vector_init_list(vec, type_size, ...)|hybrid|Initializes the vector and populates it with the arguments provided after _typesize_ (must be pointers, must not exceed 64 arguments)|0 success, -1 failure \
 
 

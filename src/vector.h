@@ -28,8 +28,8 @@
 })
 
 /* Initialize a vector with an list of arguments passed in by pointer and terminated by a NULL pointer */
-#define vector_init_list(__vec, __size, __type_size, ...) ({                                     \
-    int8_t __i = vector_init(__vec, __size, __type_size);                                        \
+#define vector_init_list(__vec, __type_size, ...) ({                                     \
+    int8_t __i = vector_init(__vec, PP_NARG(__VA_ARGS__), __type_size);                          \
     __i = __init_list(__vec, PP_NARG(__VA_ARGS__), __VA_ARGS__);                                 \
     (__i);                                                                                       \
 })
