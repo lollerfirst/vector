@@ -3,12 +3,13 @@
 ### features:
 * Thread-safe functions;
 * System that hints the OS on which block can be swapped based on memory-access statistics;
+* List initialization, array initialization;
 * Push-back, pop-back, push-front, pop-front functions;
 * Pushing/Popping more elements at once;
 * Read/Store at specific locations;
 * Reading/Storing more elements at once;
-* [[not THREAD-SAFE]] Get the address of an element at a specific index (useful for strings and very long datatypes)
-* Popf does not immediately recompact the whole vector, but has a backlog up to 48 elements before recompacting
+* [[not THREAD-SAFE]] Get the address of an element at a specific index (useful for strings and very long datatypes);
+* Popf does not immediately recompact the whole vector, but has a backlog up to 48 elements before recompacting;
 * Pushf checks if there is space left over from Popf before moving the whole vector to make space for 1 element.
 
 ### planning:
@@ -32,7 +33,7 @@
 |vector_popn(vec, dest, element_count)|no|Pop element_count elements from the back of the vector into dest|0 success, -1 failure|
 |vector_popf(vec, dest)|no|Pop an element from the front of the vector into dest|0 success, -1 failure|
 |vector_at(vec, index)|no|Returns the address of an element at the specified zero addressed index|address pointer on success, 0xFFFFFFFFFFFFFFFF on failure|
-|vector_init_arr(vec, src, element_count, type_size)|hybrid|Initializes the vector and populates it with the specified array|0 success, -1 failure|
-|vector_init_list(vec, type_size, ...)|hybrid|Initializes the vector and populates it with the arguments provided after _typesize_ (must be pointers, must not exceed 64 arguments)|0 success, -1 failure \
+|vector_init_arr(vec, src, element_count, type_size)|yes|Initializes the vector and populates it with the specified array|0 success, -1 failure|
+|vector_init_list(vec, type_size, ...)|hybrid|Initializes the vector and populates it with the arguments provided after _typesize_ (must be pointers, must not exceed 64 arguments)|0 success, -1 failure|
 
 
