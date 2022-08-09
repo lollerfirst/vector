@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
-typedef volatile _Atomic uint8_t __mutex_semaphore;
+typedef volatile uint8_t __mutex_semaphore;
 
 /* initialize the mutex semaphore */
 #define mutex_init(__mutex)\

@@ -1,66 +1,4 @@
-#define _GNU_SOURCE
-
-#include <stdint.h>
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <memory.h>
-#include <stdbool.h>
-#include "semaphore.h"
-
-#define __VECTOR_MAX_SIZE 1073741824  // 1 GB max size
-#define __VECTOR_POPHEAD_DELAY 48
-#define __SWAP_GAMMA 0.75F
-#define __INIT_VALUE 46
-
-#define unlikely(x) __builtin_expect(x, 0)
-#define likely(x) __builtin_expect(x, 1)
-
-#define check_init(__vec) (__vec->__vector_init)
-
-#define vector_memcheck(__vec) {\
-    if(unlikely(__vec->__vector_swap_indices[0] != __vec->__vector_swap_indices[1] && __vec->__vector_swap_indices[1] > 0)){\
-    uintptr_t swap_addr1 = (uintptr_t) __vec->__vector_ptr + (((uint32_t)__vec->__vector_swap_indices[0]-1) * __PAGE_SIZE);\
-    uintptr_t swap_addr2 = (uintptr_t) __vec->__vector_ptr + (((uint32_t)__vec->__vector_swap_indices[1]-1) * __PAGE_SIZE);\
-    posix_madvise((void*)swap_addr1, __PAGE_SIZE, MADV_SEQUENTIAL);\
-    posix_madvise((void*)swap_addr2, __PAGE_SIZE, MADV_DONTNEED);\
-    }\
-}
-
-
-static uint32_t __PAGE_SIZE;
-
-typedef unsigned __int128 uint128_t;
-
-typedef struct __vector_type{ uint8_t __vector_init;
-                         uint8_t* __vector_ptr; 
-                         uint32_t __vector_pages;
-                         float __vector_swap_indices[2];
-                         uint64_t __vector_size; 
-                         uint64_t __vector_element_size; 
-                         uint64_t __vector_index;
-                         uint16_t __vector_head_popped;
-                         __mutex_semaphore __vector_sem; 
-                         } Vector;
-
-
-/* Read __element_count elements starting from __index (ATTENTION: this can still segfault)*/
-void vector_readn(Vector* restrict __vec, void* restrict __dest, const uint64_t __index, const size_t __element_count);
-/* Store __element_count elements starting from __index (ATTENTION: this can still segfault)*/
-void vector_storen(Vector*  restrict __vec, void*  restrict __src, const uint64_t __index, const size_t __element_count);
-/* Initialize the vector with specified __size and of the type __type_size */
-int vector_init(Vector* __vec, const size_t __size, const size_t __type_size);
-/* Push __element_count elements to the back of the vector from __src */
-int vector_pushn(Vector* restrict __vec, const void*  restrict __src, const size_t __element_count);
-/* Push an element to the front of the vector from __src */
-int vector_pushf(Vector* restrict __vec, const void* restrict __src);
-/* Pop __element_count elements from the back of the vector into __dest */
-int vector_popn(Vector* restrict __vec, void* restrict __dest, const size_t __element_count);
-/* Pop an element from the front of the vector into __dest */
-int vector_popf(Vector* restrict __vec, void* restrict __dest);
-/* Returns the address of an element at the specified zero addressed index */
-void* vector_at(Vector* __vec, const uint64_t __index);
-/* Frees the memory and deinitializes the vector*/
-void vector_free(Vector* __vec);
+#include <vector.h>
 
 static inline int vector_expand(Vector*);
 static inline int vector_shrink(Vector*);
@@ -357,4 +295,6 @@ void vector_free(Vector* __vec){
     
     munmap(__vec->__vector_ptr, __vec->__vector_pages*__PAGE_SIZE);
     memset(__vec, 0, sizeof(Vector));
+
+    mutex_signal((__mutex_semaphore*) sem);
 }

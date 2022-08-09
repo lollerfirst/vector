@@ -1,13 +1,54 @@
 #ifndef VECTOR_H
 #define VECTOR_H
 
-#include "semaphore.h"
+#define _GNU_SOURCE
+
+
+#include <narg.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <sys/mman.h>
+#include <memory.h>
 #include <stdbool.h>
-#include <stdarg.h>
-#include "narg.h"
-#include <stdarg.h>
+#include <semaphore.h>
+#include <unistd.h>
+
+#define __VECTOR_MAX_SIZE 1073741824  // 1 GB max size
+#define __VECTOR_POPHEAD_DELAY 48
+#define __SWAP_GAMMA 0.75F
+#define __INIT_VALUE 46
+
+#define unlikely(x) __builtin_expect(x, 0)
+#define likely(x) __builtin_expect(x, 1)
+
+#define check_init(__vec) ((__vec)->__vector_init)
+
+#define vector_memcheck(__vec) {\
+    if(unlikely(__vec->__vector_swap_indices[0] != __vec->__vector_swap_indices[1] && __vec->__vector_swap_indices[1] > 0)){\
+    uintptr_t swap_addr1 = (uintptr_t) __vec->__vector_ptr + (((uint32_t)__vec->__vector_swap_indices[0]-1) * __PAGE_SIZE);\
+    uintptr_t swap_addr2 = (uintptr_t) __vec->__vector_ptr + (((uint32_t)__vec->__vector_swap_indices[1]-1) * __PAGE_SIZE);\
+    posix_madvise((void*)swap_addr1, __PAGE_SIZE, MADV_SEQUENTIAL);\
+    posix_madvise((void*)swap_addr2, __PAGE_SIZE, MADV_DONTNEED);\
+    }\
+}
+
+
+static uint32_t __PAGE_SIZE;
+
+typedef unsigned __int128 uint128_t;
+
+typedef struct __vector_type{ uint8_t __vector_init;
+                         uint8_t* __vector_ptr; 
+                         uint32_t __vector_pages;
+                         float __vector_swap_indices[2];
+                         uint64_t __vector_size; 
+                         uint64_t __vector_element_size; 
+                         uint64_t __vector_index;
+                         uint16_t __vector_head_popped;
+                         __mutex_semaphore __vector_sem; 
+                         } Vector;
+
 
 /* Vector max size */
 #define __VECTOR_MAX_SIZE 1073741824
@@ -20,6 +61,11 @@
 #define vector_read(__vec, __dest, __index) vector_readn(__vec, __dest, __index, 1)
 /* Store and element at the specified vector __index. (vector_storen for a more efficient call)*/
 #define vector_store(__vec, __src, __index) vector_storen(__vec, __src, __index, 1)
+/* Returns true if the vector is initialized, false otherwise */
+#define vector_is_init(__vec) (((__vec)->__vector_init == __INIT_VALUE))
+/* Returns true if the vector is initialized, false otherwise */
+#define vector_size(__vec) ((__vec)->__vector_index)
+
 /* Initialize the vector with a pre-existing array __arr*/
 #define vector_init_arr(__vec, __arr, __element_count, __type_size) ({   \
     int8_t __i = vector_init(__vec, __element_count, __type_size);       \
@@ -66,7 +112,6 @@ extern void* vector_at(Vector* __vec, const uint64_t __index);
 extern void vector_free(Vector* __vec);
 
 
-
 /* init_list */
 int __init_list(Vector* __vec, const uint32_t __narg, ...){
     va_list list;
@@ -79,4 +124,5 @@ int __init_list(Vector* __vec, const uint32_t __narg, ...){
     return 0;
 } 
 
+#undef _GNU_SOURCE
 #endif
